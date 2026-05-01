@@ -80,7 +80,7 @@ class _HomeScreenState extends State<HomeScreen> {
               onChanged: _onSearchChanged,
               style: const TextStyle(color: Colors.white),
               decoration: InputDecoration(
-                hintText: 'Search countries…',
+                hintText: 'Find a country...',
                 hintStyle: TextStyle(
                   color: Colors.white.withValues(alpha: 0.7),
                 ),
