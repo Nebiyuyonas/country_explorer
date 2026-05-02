@@ -1,14 +1,57 @@
 import 'package:flutter/material.dart';
 import '../models/country.dart';
+import '../services/favorites_service.dart';
 
-class DetailScreen extends StatelessWidget {
+class DetailScreen extends StatefulWidget {
   final Country country;
 
   const DetailScreen({super.key, required this.country});
 
   @override
+  State<DetailScreen> createState() => _DetailScreenState();
+}
+
+class _DetailScreenState extends State<DetailScreen> {
+  final FavoritesService _favoritesService = FavoritesService();
+  bool _isFavorite = false;
+  bool _loadingFav = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _checkFavorite();
+  }
+
+  Future<void> _checkFavorite() async {
+    final result = await _favoritesService.isFavorite(widget.country.name);
+    setState(() {
+      _isFavorite = result;
+      _loadingFav = false;
+    });
+  }
+
+  Future<void> _toggleFavorite() async {
+    await _favoritesService.toggleFavorite(widget.country);
+    setState(() => _isFavorite = !_isFavorite);
+
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          _isFavorite
+              ? '${widget.country.name} added to favourites'
+              : '${widget.country.name} removed from favourites',
+        ),
+        behavior: SnackBarBehavior.floating,
+        duration: const Duration(seconds: 2),
+      ),
+    );
+  }
+
+  @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
+    final country = widget.country;
 
     return Scaffold(
       backgroundColor: colorScheme.surface,
@@ -17,6 +60,30 @@ class DetailScreen extends StatelessWidget {
         backgroundColor: colorScheme.primary,
         foregroundColor: colorScheme.onPrimary,
         elevation: 0,
+        actions: [
+          _loadingFav
+              ? const Padding(
+                  padding: EdgeInsets.all(14),
+                  child: SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: Colors.white,
+                    ),
+                  ),
+                )
+              : IconButton(
+                  icon: Icon(
+                    _isFavorite ? Icons.favorite : Icons.favorite_border,
+                    color: _isFavorite ? Colors.redAccent[100] : Colors.white,
+                  ),
+                  tooltip: _isFavorite
+                      ? 'Remove from favourites'
+                      : 'Add to favourites',
+                  onPressed: _toggleFavorite,
+                ),
+        ],
       ),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(20),
@@ -30,7 +97,7 @@ class DetailScreen extends StatelessWidget {
             padding: const EdgeInsets.all(24),
             child: Column(
               children: [
-                // ---- Header: flag + name ----
+                // Header
                 Text(country.flagEmoji, style: const TextStyle(fontSize: 72)),
                 const SizedBox(height: 10),
                 Text(
@@ -52,7 +119,7 @@ class DetailScreen extends StatelessWidget {
                 const Divider(),
                 const SizedBox(height: 12),
 
-                // ---- Detail rows ----
+                // Detail rows
                 _DetailRow(label: 'Capital', value: country.capital),
                 _DetailRow(
                   label: 'Region',
@@ -89,7 +156,6 @@ class DetailScreen extends StatelessWidget {
   }
 
   String _formatNumber(int number) {
-    // Simple thousand-separator formatter
     final str = number.toString();
     final buffer = StringBuffer();
     final offset = str.length % 3;
@@ -116,7 +182,6 @@ class _DetailRow extends StatelessWidget {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Left column — label
           SizedBox(
             width: 110,
             child: Text(
@@ -128,7 +193,6 @@ class _DetailRow extends StatelessWidget {
               ),
             ),
           ),
-          // Right column — value
           Expanded(child: Text(value, style: const TextStyle(fontSize: 14))),
         ],
       ),

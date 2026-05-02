@@ -1,10 +1,13 @@
 import 'dart:async';
+import 'dart:math';
 
 import 'package:flutter/material.dart';
 
 import '../models/country.dart';
 import '../services/country_api_service.dart';
+import '../services/favorites_service.dart';
 import 'detail_screen.dart';
+import 'favorites_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -15,18 +18,19 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   final CountryApiService _service = CountryApiService();
+  final FavoritesService _favoritesService = FavoritesService();
   final TextEditingController _searchController = TextEditingController();
 
-  // The future that FutureBuilder watches
   late Future<List<Country>> _countriesFuture;
-
-  // Debounce timer
+  Set<String> _favoriteNames = {};
   Timer? _debounce;
+  List<Country> _loadedCountries = [];
 
   @override
   void initState() {
     super.initState();
-    _countriesFuture = _service.fetchAllCountries();
+    _countriesFuture = _fetchAndCache();
+    _loadFavoriteNames();
   }
 
   @override
@@ -36,24 +40,61 @@ class _HomeScreenState extends State<HomeScreen> {
     super.dispose();
   }
 
+  Future<List<Country>> _fetchAndCache() async {
+    final result = await _service.fetchAllCountries();
+    _loadedCountries = result;
+    return result;
+  }
+
+  Future<void> _loadFavoriteNames() async {
+    final favs = await _favoritesService.loadFavorites();
+    setState(() => _favoriteNames = favs.map((c) => c.name).toSet());
+  }
+
+  Future<void> _toggleFavorite(Country country) async {
+    final updated = await _favoritesService.toggleFavorite(country);
+    setState(() => _favoriteNames = updated.map((c) => c.name).toSet());
+  }
+
   void _onSearchChanged(String query) {
-    // Cancel the previous timer each time the user types
     _debounce?.cancel();
     _debounce = Timer(const Duration(milliseconds: 400), () {
       setState(() {
-        _countriesFuture = query.trim().isEmpty
-            ? _service.fetchAllCountries()
-            : _service.searchCountries(query);
+        if (query.trim().isEmpty) {
+          _countriesFuture = _fetchAndCache();
+        } else {
+          _countriesFuture = _service.searchCountries(query);
+        }
       });
     });
   }
 
   void _retry() {
     setState(() {
-      _countriesFuture = _searchController.text.trim().isEmpty
-          ? _service.fetchAllCountries()
-          : _service.searchCountries(_searchController.text);
+      if (_searchController.text.trim().isEmpty) {
+        _countriesFuture = _fetchAndCache();
+      } else {
+        _countriesFuture = _service.searchCountries(_searchController.text);
+      }
     });
+  }
+
+  void _goToRandomCountry() {
+    if (_loadedCountries.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Countries are still loading, please wait…'),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+      return;
+    }
+    final random = Random();
+    final country = _loadedCountries[random.nextInt(_loadedCountries.length)];
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => DetailScreen(country: country)),
+    ).then((_) => _loadFavoriteNames());
   }
 
   @override
@@ -71,6 +112,19 @@ class _HomeScreenState extends State<HomeScreen> {
         elevation: 0,
         backgroundColor: colorScheme.primary,
         foregroundColor: colorScheme.onPrimary,
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.favorite),
+            tooltip: 'Favourites',
+            onPressed: () async {
+              await Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const FavoritesScreen()),
+              );
+              _loadFavoriteNames();
+            },
+          ),
+        ],
         bottom: PreferredSize(
           preferredSize: const Size.fromHeight(64),
           child: Padding(
@@ -80,7 +134,7 @@ class _HomeScreenState extends State<HomeScreen> {
               onChanged: _onSearchChanged,
               style: const TextStyle(color: Colors.white),
               decoration: InputDecoration(
-                hintText: 'Find a country...',
+                hintText: 'Search countries…',
                 hintStyle: TextStyle(
                   color: Colors.white.withValues(alpha: 0.7),
                 ),
@@ -109,20 +163,22 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
         ),
       ),
+      floatingActionButton: FloatingActionButton.extended(
+        onPressed: _goToRandomCountry,
+        icon: const Icon(Icons.shuffle),
+        label: const Text('Random'),
+        backgroundColor: colorScheme.secondary,
+        foregroundColor: colorScheme.onSecondary,
+      ),
       body: FutureBuilder<List<Country>>(
         future: _countriesFuture,
         builder: (context, snapshot) {
-          // --- Loading ---
           if (snapshot.connectionState == ConnectionState.waiting) {
             return const Center(child: CircularProgressIndicator());
           }
-
-          // --- Error ---
           if (snapshot.hasError) {
             return _buildError(snapshot.error.toString());
           }
-
-          // --- No data ---
           final countries = snapshot.data ?? [];
           if (countries.isEmpty) {
             return const Center(
@@ -139,20 +195,25 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
             );
           }
-
-          // --- Data ---
           return ListView.builder(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
             itemCount: countries.length,
             itemBuilder: (context, index) {
+              final country = countries[index];
+              final isFav = _favoriteNames.contains(country.name);
               return _CountryCard(
-                country: countries[index],
-                onTap: () => Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (_) => DetailScreen(country: countries[index]),
-                  ),
-                ),
+                country: country,
+                isFavorite: isFav,
+                onTap: () async {
+                  await Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => DetailScreen(country: country),
+                    ),
+                  );
+                  _loadFavoriteNames();
+                },
+                onToggleFavorite: () => _toggleFavorite(country),
               );
             },
           );
@@ -188,13 +249,18 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 }
 
-// ---------- Private card widget ----------
-
 class _CountryCard extends StatelessWidget {
   final Country country;
+  final bool isFavorite;
   final VoidCallback onTap;
+  final VoidCallback onToggleFavorite;
 
-  const _CountryCard({required this.country, required this.onTap});
+  const _CountryCard({
+    required this.country,
+    required this.isFavorite,
+    required this.onTap,
+    required this.onToggleFavorite,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -212,10 +278,8 @@ class _CountryCard extends StatelessWidget {
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
           child: Row(
             children: [
-              // Flag emoji
               Text(country.flagEmoji, style: const TextStyle(fontSize: 40)),
               const SizedBox(width: 16),
-              // Name + region
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -235,6 +299,16 @@ class _CountryCard extends StatelessWidget {
                     ),
                   ],
                 ),
+              ),
+              IconButton(
+                icon: Icon(
+                  isFavorite ? Icons.favorite : Icons.favorite_border,
+                  color: isFavorite ? Colors.redAccent : Colors.grey,
+                ),
+                onPressed: onToggleFavorite,
+                tooltip: isFavorite
+                    ? 'Remove from favourites'
+                    : 'Add to favourites',
               ),
               const Icon(Icons.chevron_right, color: Colors.grey),
             ],
