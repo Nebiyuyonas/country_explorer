@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:share_plus/share_plus.dart';
+
 import '../models/country.dart';
 import '../services/favorites_service.dart';
 
@@ -33,7 +35,6 @@ class _DetailScreenState extends State<DetailScreen> {
   Future<void> _toggleFavorite() async {
     await _favoritesService.toggleFavorite(widget.country);
     setState(() => _isFavorite = !_isFavorite);
-
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
@@ -46,6 +47,40 @@ class _DetailScreenState extends State<DetailScreen> {
         duration: const Duration(seconds: 2),
       ),
     );
+  }
+
+  void _shareCountry() {
+    final c = widget.country;
+
+    // Format population: show as e.g. "331.4M" or "4.9K"
+    String formatPop(int pop) {
+      if (pop >= 1000000000) {
+        return '${(pop / 1000000000).toStringAsFixed(1)}B';
+      } else if (pop >= 1000000) {
+        return '${(pop / 1000000).toStringAsFixed(1)}M';
+      } else if (pop >= 1000) {
+        return '${(pop / 1000).toStringAsFixed(1)}K';
+      }
+      return pop.toString();
+    }
+
+    final text =
+        '''
+${c.flagEmoji} ${c.name}
+Official name: ${c.officialName}
+Capital: ${c.capital}
+Region: ${c.region}${c.subregion.isNotEmpty ? ' › ${c.subregion}' : ''}
+Population: ${formatPop(c.population)}
+Area: ${c.area.toStringAsFixed(0)} km²
+Currencies: ${c.currencies.join(', ')}
+Languages: ${c.languages.join(', ')}
+Timezones: ${c.timezones.join(', ')}
+
+Shared from Country Explorer 🌍
+'''
+            .trim();
+
+    Share.share(text, subject: '${c.flagEmoji} ${c.name} — Country Info');
   }
 
   @override
@@ -61,6 +96,13 @@ class _DetailScreenState extends State<DetailScreen> {
         foregroundColor: colorScheme.onPrimary,
         elevation: 0,
         actions: [
+          // Share button
+          IconButton(
+            icon: const Icon(Icons.share),
+            tooltip: 'Share country info',
+            onPressed: _shareCountry,
+          ),
+          // Favourite button
           _loadingFav
               ? const Padding(
                   padding: EdgeInsets.all(14),
@@ -97,7 +139,6 @@ class _DetailScreenState extends State<DetailScreen> {
             padding: const EdgeInsets.all(24),
             child: Column(
               children: [
-                // Header
                 Text(country.flagEmoji, style: const TextStyle(fontSize: 72)),
                 const SizedBox(height: 10),
                 Text(
@@ -114,12 +155,9 @@ class _DetailScreenState extends State<DetailScreen> {
                   ).textTheme.bodySmall?.copyWith(color: Colors.grey[600]),
                   textAlign: TextAlign.center,
                 ),
-
                 const SizedBox(height: 24),
                 const Divider(),
                 const SizedBox(height: 12),
-
-                // Detail rows
                 _DetailRow(label: 'Capital', value: country.capital),
                 _DetailRow(
                   label: 'Region',

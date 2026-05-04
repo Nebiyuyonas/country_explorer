@@ -2,15 +2,17 @@ import 'dart:async';
 import 'dart:math';
 
 import 'package:flutter/material.dart';
-
 import '../models/country.dart';
 import '../services/country_api_service.dart';
 import '../services/favorites_service.dart';
+import '../services/theme_service.dart';
 import 'detail_screen.dart';
 import 'favorites_screen.dart';
 
 class HomeScreen extends StatefulWidget {
-  const HomeScreen({super.key});
+  final ThemeService themeService;
+
+  const HomeScreen({super.key, required this.themeService});
 
   @override
   State<HomeScreen> createState() => _HomeScreenState();
@@ -113,6 +115,15 @@ class _HomeScreenState extends State<HomeScreen> {
         backgroundColor: colorScheme.primary,
         foregroundColor: colorScheme.onPrimary,
         actions: [
+          // Dark/Light theme toggle button
+          IconButton(
+            icon: Icon(
+              widget.themeService.isDark ? Icons.light_mode : Icons.dark_mode,
+            ),
+            tooltip: 'Toggle theme',
+            onPressed: () => widget.themeService.toggleTheme(),
+          ),
+          // Favourites screen button
           IconButton(
             icon: const Icon(Icons.favorite),
             tooltip: 'Favourites',
